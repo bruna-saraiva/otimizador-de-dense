@@ -10,7 +10,7 @@
 
 # ## Pre-requisitos
 
-# In[ ]:
+# In[1]:
 
 
 get_ipython().system('pip install hyperopt')
@@ -18,7 +18,7 @@ get_ipython().system('pip install pymongo')
 get_ipython().system('pip install nbconvert')
 
 
-# In[23]:
+# In[2]:
 
 
 import numpy as np
@@ -61,19 +61,19 @@ import uuid
 
 
 
-# In[ ]:
+# In[25]:
 
 
 get_ipython().system('python -m jupyter nbconvert --to script "*.ipynb"')
 
 
-# In[24]:
+# In[26]:
 
 
 get_ipython().system('mkdir results')
 
 
-# In[25]:
+# In[27]:
 
 
 get_ipython().system('ls -l /')
@@ -81,7 +81,7 @@ get_ipython().system('ls -l /')
 
 # ## Globais
 
-# In[ ]:
+# In[28]:
 
 
 #globais
@@ -93,10 +93,10 @@ img_height = 224
 batch_size = 8 #batch_size para o treino
 
 #define o batch_size de validação, das imagens de acordo com a memória disponivél na máquina
-batch_size_val = 16
+batch_size_val = 1
 
 #define as épocas
-epochs = 15
+epochs = 5
 
 eps = 1.1e-5
 
@@ -107,7 +107,7 @@ RESULTS_DIR = "results/" #pasta para salvar os resultados dos treinamentos
 
 # ## Utils
 
-# In[27]:
+# In[29]:
 
 
 def keras_model_memory_usage_in_bytes(model, *, batch_size: int):
@@ -160,7 +160,7 @@ def keras_model_memory_usage_in_bytes(model, *, batch_size: int):
     return total_memory
 
 
-# In[28]:
+# In[30]:
 
 
 def save_json_result(model_name, result):
@@ -178,7 +178,7 @@ def save_json_result(model_name, result):
 
 # ## Etapa 1: Dataset
 
-# In[29]:
+# In[31]:
 
 
 # Dataset Pneumonia
@@ -197,7 +197,7 @@ train_images = glob.glob(f'{dataset_path}/train/*/*')  # Arquivos de treino
 # train_filenames, val_filenames = train_test_split(filenames, test_size=0.2) 
 
 
-# In[30]:
+# In[32]:
 
 
 COUNT_NORMAL = len([filename for filename in train_images if "NORMAL" in filename])
@@ -216,7 +216,7 @@ print("Viral Pneumonia images count in training set: " + str(COUNT_VIRUS))
 # print("Pneumonia images count in training set: " + str(COUNT_PNEUMONIA_val))
 
 
-# In[31]:
+# In[33]:
 
 
 CLASS_NAMES = np.array([str(tf.strings.split(item, os.path.sep)[-1].numpy())[2:-1]
@@ -227,22 +227,35 @@ CLASS_NAMES = np.array([str(tf.strings.split(item, os.path.sep)[-1].numpy())[2:-
 CLASS_NAMES
 
 
-# In[32]:
+# In[34]:
 
 
-train_datagen = ImageDataGenerator(rescale=1./255)
+#DataGenerator utilizado para fazer o augmentation on the batch
+datagen = ImageDataGenerator(rescale=1.,
+    featurewise_center=True,
+    rotation_range=10,
+    width_shift_range=.1,
+    height_shift_range=.1,
+    shear_range=0.2,
+    horizontal_flip=True,
+    vertical_flip=False,
+    fill_mode="reflect") #generator de treino
+
+validgen = ImageDataGenerator(rescale=1., featurewise_center=True) #generator de teste e validação, evita-se realizar alterações nas imagen
 
 
-# In[33]:
+# In[ ]:
 
 
-train_generator = train_datagen.flow_from_directory(
+train_generator = datagen.flow_from_directory(
     directory="chest_pneumonia/train",
     target_size=(img_width, img_height),
     color_mode="rgb",
     batch_size=batch_size,
     class_mode="categorical",
-    shuffle=False,
+    shuffle=True,
+    
+ 
 )
 
 # val_generator = train_datagen.flow_from_directory(
@@ -252,18 +265,19 @@ train_generator = train_datagen.flow_from_directory(
 #     batch_size=batch_size,
 #     class_mode="categorical",
 #     shuffle=True,
+
 # )
-test_generator = train_datagen.flow_from_directory(
+test_generator = validgen.flow_from_directory(
     directory="chest_pneumonia/test",
     target_size=(img_width, img_height), #?
     color_mode="rgb",
-    batch_size=batch_size,
+    batch_size=batch_size_val,
     class_mode="categorical",
     shuffle=False,
 )
 
 
-# In[34]:
+# In[36]:
 
 
 import matplotlib.pyplot as plt
@@ -289,14 +303,14 @@ plt.tight_layout()
 plt.show()
 
 
-# In[35]:
+# In[37]:
 
 
 # from keras.datasets import fashion_mnist
 # (x_train, y_train), (x_test, y_test) = fashion_mnist.load_data()
 
 
-# In[36]:
+# In[38]:
 
 
 # y_train = to_categorical(y_train, 10)
@@ -310,7 +324,7 @@ plt.show()
 # 
 # Objetivo: construir uma densenet de acordo com os parâmetros que o otmizador enviar
 
-# In[37]:
+# In[39]:
 
 
 '''
@@ -399,7 +413,7 @@ def build_model(input_shape,
     return model
 
 
-# In[38]:
+# In[40]:
 
 
 import tensorflow as tf
@@ -416,7 +430,7 @@ else:
 # ## Etapa 3: Configurando a Otimização
 # 
 
-# In[39]:
+# In[41]:
 
 
 def build_and_train(hype_space):
@@ -437,7 +451,7 @@ def build_and_train(hype_space):
     
     print("Model size: " + str(model_size) )
     # Para testar o tamanho e os hiperparametros do modelo comente tudo abaixo de return model_final(etc) e comente o if abaixo. 
-    if (model_size > 10.5): 
+    if (model_size > 11.5): 
         model_name = "model_" + str(model_size)[:8]
         # model_name = "model_" + str(uuid.uuid4())[:5]     
             
@@ -448,7 +462,6 @@ def build_and_train(hype_space):
         }
         return model_final, model_name, result
 
-    print("daqui eu nao passo")
 
     #inicio da fase de treino
     #as imagens são passadas na rede
@@ -492,7 +505,7 @@ def build_and_train(hype_space):
 
 # ## Etapa 4: Executando a otimização
 
-# In[40]:
+# In[42]:
 
 
 #código de # https://github.com/hyperopt/hyperopt/issues/267
@@ -527,7 +540,7 @@ def optimize_cnn(hype_space):
     print("\n\n")
 
 
-# In[41]:
+# In[43]:
 
 
 #código de # https://github.com/hyperopt/hyperopt/issues/267
@@ -559,16 +572,16 @@ def run_a_trial():
     print("\nOPTIMIZATION STEP COMPLETE.\n")
 
 
-# In[ ]:
+# In[44]:
 
 
 space = {
-    'num_blocks': hp.choice('num_blocks', [3,4,5]), # antes: [2,3,4,5]
-    'num_layers_per_block' : hp.choice('num_layers_per_block', [2,3,4]), # [2,3,4,5,6]
-    'growth_rate': hp.choice('growth_rate', [8,16,32]), # [8,16,32]
+    'num_blocks': hp.choice('num_blocks', [3]), # antes: [2,3,4,5]
+    'num_layers_per_block' : hp.choice('num_layers_per_block', [2]), # [2,3,4,5,6]
+    'growth_rate': hp.choice('growth_rate', [32]), # [8,16,32]
     'dropout_rate' : hp.uniform('dropout_rate', 0.2, 0.35), # esse é o menos importante 
-    'compress_factor' : hp.choice('compress_factor', [0.5,0.7]),
-    'num_filters' : hp.choice('num_filters', [32]) #32,64
+    'compress_factor' : hp.choice('compress_factor', [0.5]),
+    'num_filters' : hp.choice('num_filters', [64]) #32,64
 }
 
 # space = {
@@ -581,7 +594,7 @@ space = {
 # }
 
 
-# In[43]:
+# In[45]:
 
 
 if __name__ == "__main__":
