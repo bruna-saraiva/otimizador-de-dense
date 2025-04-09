@@ -1,33 +1,34 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[23]:
 
 
 # !cp /content/drive/MyDrive/vandecia/denseGroupTPE/database.zip .
 
 
-# In[2]:
+# In[24]:
 
 
 # !unzip database.zip
 
 
-# In[3]:
+# In[25]:
 
 
 get_ipython().system('pip install hyperopt')
 get_ipython().system('pip install pymongo')
 get_ipython().system('pip install nbconvert')
+get_ipython().system('pip install pydot graphviz')
 
 
-# In[4]:
+# In[26]:
 
 
 get_ipython().system('mkdir results')
 
 
-# In[5]:
+# In[27]:
 
 
 import numpy as np
@@ -50,6 +51,7 @@ from keras.optimizers import SGD, Adam
 from sklearn import metrics
 from keras import metrics
 from keras.models import load_model, Model
+from tensorflow.keras.utils import plot_model
 
 from hyperopt import hp
 from hyperopt import hp, tpe, Trials, fmin, STATUS_OK
@@ -69,13 +71,18 @@ import pickle
 import uuid
 
 
-# In[6]:
+# In[28]:
+
+
+get_ipython().system('python -m jupyter nbconvert --to script "*.ipynb"')
+
+
+# In[29]:
 
 
 #define o tamanho padrão das imagens que serão passadas na rede, sendo que a mesma aceita imagens maiores que o padrão definido da VGG16 (255x255)
 img_width = 128
-img_height = 128
-
+img_height =  128
 batch_size = 8 #batch_size para o treino
 
 #define o batch_size de validação, das imagens de acordo com a memória disponivél na máquina
@@ -85,12 +92,13 @@ batch_size_val = 1
 epochs = 5
 
 class_weight = {0: 1.48, 1: 4.14, 2:11.49}
+# class_weight = {0: 1, 1: 1, 2:1}
 
 RESULTS_DIR = "results/" #pasta para salvar os resultados dos treinamentos
 
-train_data_dir = "chest_pneumonia/train"
-# validation_data_dir = "database/split1/val"
-test_data_dir = "chest_pneumonia/test"
+train_data_dir = "database/split1/train"
+validation_data_dir = "database/split1/val"
+test_data_dir = "database/split1/test"
 
 num_classes_exp = 3
 
@@ -130,12 +138,12 @@ train_gen = datagen.flow_from_directory( #generator para treino
     class_mode="categorical",
     shuffle=True)
 
-# val_gen = validgen.flow_from_directory( #generator para validação
-#     validation_data_dir,
-#     target_size=(img_height, img_width),
-#     batch_size=batch_size_val,
-#     class_mode="categorical",
-#     shuffle=True)
+val_gen = validgen.flow_from_directory( #generator para validação
+    validation_data_dir,
+    target_size=(img_height, img_width),
+    batch_size=batch_size_val,
+    class_mode="categorical",
+    shuffle=True)
 
 test_gen = validgen.flow_from_directory( #generator para teste
     test_data_dir,
@@ -147,11 +155,11 @@ test_gen = validgen.flow_from_directory( #generator para teste
 
 #pega a quantidade de amostras de cada generator
 train_samples = len(train_gen.filenames)
-# validation_samples = len(val_gen.filenames)
+validation_samples = len(val_gen.filenames)
 test_samples = len(test_gen.filenames)
 
 
-# In[7]:
+# In[30]:
 
 
 tf.keras.backend.clear_session()
@@ -182,7 +190,7 @@ def keras_model_memory_usage_in_bytes(model, *, batch_size: int):
                 layer, batch_size=batch_size
             )
         single_layer_mem = tf.as_dtype(layer.dtype or default_dtype).size
-        out_shape = layer.output
+        out_shape = layer.output_shape
         if isinstance(out_shape, list):
             out_shape = out_shape[0]
         for s in out_shape:
@@ -207,7 +215,7 @@ def keras_model_memory_usage_in_bytes(model, *, batch_size: int):
     return total_memory
 
 
-# In[8]:
+# In[31]:
 
 
 def save_json_result(model_name, result):
@@ -225,7 +233,7 @@ def save_json_result(model_name, result):
 
 # 
 
-# In[9]:
+# In[32]:
 
 
 import numpy as np
@@ -322,13 +330,13 @@ def get_model(input_shape,
     model = Model( inputs , outputs )
     model.compile( loss='categorical_crossentropy' ,optimizer=Adam(),
                     metrics=[ 'accuracy',
-                              metrics.Recall(thresholds=0.5, class_id=0,name='r_bacteria'),
-                              metrics.Recall(thresholds=0.5, class_id=1,name='r_normal'),
+                              metrics.Recall(thresholds=0.5, class_id=0,name='r_normal'),
+                              metrics.Recall(thresholds=0.5, class_id=1,name='r_covid'),
                               metrics.Recall(thresholds=0.5, class_id=2,name='r_viral')])
     return model
 
 
-# In[10]:
+# In[33]:
 
 
 def build_and_train(hype_space):
@@ -342,21 +350,24 @@ def build_and_train(hype_space):
             compress_factor = hype_space['compress_factor'],
             num_filters = hype_space['num_filters'],
             num_classes = num_classes_exp)
+# ----------------------------------------------------------------------------
+    model_size = keras_model_memory_usage_in_bytes(model = model_final,
+                       batch_size = batch_size)
+    model_size = model_size/1000000000
 
-    #model_size = keras_model_memory_usage_in_bytes(model = model_final,
-    #                    batch_size = batch_size)
-    #model_size = model_size/1000000000
+    #print("Model size: " + str(model_size) )
+    if (model_size > 10.5):
+        model_name = "model_" + str(uuid.uuid4())[:5]
+        result = {
+            'space': hype_space,
+            'status': STATUS_FAIL
+        }
+        return model_final, model_name, result
 
-    ##print("Model size: " + str(model_size) )
-    # if (model_size > 10.5):
-    #     model_name = "model_" + str(uuid.uuid4())[:5]
-    #     result = {
-    #         'space': hype_space,
-    #         'status': STATUS_FAIL
-    #     }
-    #     return model_final, model_name, result
+    model_final = load_model('weights_best_etapa1.keras')
 
-    #model_final = load_model('weights_best_etapa1.hdf5')
+# ----------------------------------------------------------------------------
+
 
     #inicio da fase de treino
     #as imagens são passadas na rede
@@ -382,13 +393,13 @@ def build_and_train(hype_space):
     acc = accuracy_score(test_gen.classes, y_pred) #calcula o acurácia era metrics.accuracy_score....
     class_report = classification_report(test_gen.classes, y_pred, output_dict=True)#, target_names=target_names)
 
-    model_pesos = load_model('weights_best_etapa1.hdf5')
-    preds = model_pesos.predict(test_gen, test_samples) #realiza o teste de classificação das imagens na rede
-    y_pred = np.argmax(preds, axis=1)
-    acc_p_1 = accuracy_score(test_gen.classes, y_pred) #calcula o acurácia
-    class_report_p_1 = classification_report(test_gen.classes, y_pred, output_dict=True)#, target_names=target_names)
+    # model_pesos = load_model('weights_best_etapa1.hdf5')
+    # preds = model_pesos.predict(test_gen, test_samples) #realiza o teste de classificação das imagens na rede
+    # y_pred = np.argmax(preds, axis=1)
+    # acc_p_1 = accuracy_score(test_gen.classes, y_pred) #calcula o acurácia
+    # class_report_p_1 = classification_report(test_gen.classes, y_pred, output_dict=True)#, target_names=target_names)
 
-    del model_pesos
+    # del model_pesos
 
     model_name = "model_{}_{}".format(str(acc), str(uuid.uuid4())[:5])
     plot_model(model_final, to_file= RESULTS_DIR + model_name + '_plot.png', show_shapes=True, show_layer_names=True)
@@ -397,8 +408,8 @@ def build_and_train(hype_space):
         'loss': 1-acc,
         'acurracy': acc,
         'report': class_report,
-        'acurracy_p_1': acc_p_1,
-        'report_p_1': class_report_p_1,
+        # 'acurracy_p_1': acc_p_1,
+        # 'report_p_1': class_report_p_1,
         'model_name': model_name,
         'space': hype_space,
         'status': STATUS_OK
@@ -467,21 +478,21 @@ def run_a_trial():
     print("\nOPTIMIZATION STEP COMPLETE.\n")
 
 
-# In[ ]:
+# In[34]:
 
 
-run_a_trial()
+# run_a_trial()
 
-# if __name__ == "__main__":
-#     while True:
+if __name__ == "__main__":
+    while True:
 
-#         # Optimize a new model with the TPE Algorithm:
-#         print("OPTIMIZING NEW MODEL:")
-#         try:
-#             run_a_trial()
-#         except Exception as err:
-#             err_str = str(err)
-#             print(err_str)
-#             #traceback_str = str(traceback.format_exc())
-#             #print(traceback_str)
+        # Optimize a new model with the TPE Algorithm:
+        print("OPTIMIZING NEW MODEL:")
+        try:
+            run_a_trial()
+        except Exception as err:
+            err_str = str(err)
+            print(err_str)
+            #traceback_str = str(traceback.format_exc())
+            #print(traceback_str)
 

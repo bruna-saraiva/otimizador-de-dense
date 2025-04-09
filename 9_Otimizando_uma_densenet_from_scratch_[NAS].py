@@ -10,7 +10,7 @@
 
 # ## Pre-requisitos
 
-# In[1]:
+# In[ ]:
 
 
 get_ipython().system('pip install hyperopt')
@@ -18,7 +18,7 @@ get_ipython().system('pip install pymongo')
 get_ipython().system('pip install nbconvert')
 
 
-# In[2]:
+# In[1]:
 
 
 import numpy as np
@@ -61,19 +61,19 @@ import uuid
 
 
 
-# In[25]:
+# In[2]:
 
 
 get_ipython().system('python -m jupyter nbconvert --to script "*.ipynb"')
 
 
-# In[26]:
+# In[3]:
 
 
 get_ipython().system('mkdir results')
 
 
-# In[27]:
+# In[4]:
 
 
 get_ipython().system('ls -l /')
@@ -81,7 +81,7 @@ get_ipython().system('ls -l /')
 
 # ## Globais
 
-# In[28]:
+# In[5]:
 
 
 #globais
@@ -107,7 +107,7 @@ RESULTS_DIR = "results/" #pasta para salvar os resultados dos treinamentos
 
 # ## Utils
 
-# In[29]:
+# In[6]:
 
 
 def keras_model_memory_usage_in_bytes(model, *, batch_size: int):
@@ -160,7 +160,7 @@ def keras_model_memory_usage_in_bytes(model, *, batch_size: int):
     return total_memory
 
 
-# In[30]:
+# In[7]:
 
 
 def save_json_result(model_name, result):
@@ -178,7 +178,7 @@ def save_json_result(model_name, result):
 
 # ## Etapa 1: Dataset
 
-# In[31]:
+# In[8]:
 
 
 # Dataset Pneumonia
@@ -197,7 +197,7 @@ train_images = glob.glob(f'{dataset_path}/train/*/*')  # Arquivos de treino
 # train_filenames, val_filenames = train_test_split(filenames, test_size=0.2) 
 
 
-# In[32]:
+# In[9]:
 
 
 COUNT_NORMAL = len([filename for filename in train_images if "NORMAL" in filename])
@@ -216,7 +216,7 @@ print("Viral Pneumonia images count in training set: " + str(COUNT_VIRUS))
 # print("Pneumonia images count in training set: " + str(COUNT_PNEUMONIA_val))
 
 
-# In[33]:
+# In[10]:
 
 
 CLASS_NAMES = np.array([str(tf.strings.split(item, os.path.sep)[-1].numpy())[2:-1]
@@ -227,7 +227,7 @@ CLASS_NAMES = np.array([str(tf.strings.split(item, os.path.sep)[-1].numpy())[2:-
 CLASS_NAMES
 
 
-# In[34]:
+# In[11]:
 
 
 #DataGenerator utilizado para fazer o augmentation on the batch
@@ -244,7 +244,7 @@ datagen = ImageDataGenerator(rescale=1.,
 validgen = ImageDataGenerator(rescale=1., featurewise_center=True) #generator de teste e validação, evita-se realizar alterações nas imagen
 
 
-# In[ ]:
+# In[12]:
 
 
 train_generator = datagen.flow_from_directory(
@@ -277,7 +277,7 @@ test_generator = validgen.flow_from_directory(
 )
 
 
-# In[36]:
+# In[13]:
 
 
 import matplotlib.pyplot as plt
@@ -303,14 +303,14 @@ plt.tight_layout()
 plt.show()
 
 
-# In[37]:
+# In[14]:
 
 
 # from keras.datasets import fashion_mnist
 # (x_train, y_train), (x_test, y_test) = fashion_mnist.load_data()
 
 
-# In[38]:
+# In[15]:
 
 
 # y_train = to_categorical(y_train, 10)
@@ -324,7 +324,7 @@ plt.show()
 # 
 # Objetivo: construir uma densenet de acordo com os parâmetros que o otmizador enviar
 
-# In[39]:
+# In[16]:
 
 
 '''
@@ -413,7 +413,7 @@ def build_model(input_shape,
     return model
 
 
-# In[40]:
+# In[17]:
 
 
 import tensorflow as tf
@@ -430,7 +430,7 @@ else:
 # ## Etapa 3: Configurando a Otimização
 # 
 
-# In[41]:
+# In[18]:
 
 
 def build_and_train(hype_space):
@@ -505,7 +505,7 @@ def build_and_train(hype_space):
 
 # ## Etapa 4: Executando a otimização
 
-# In[42]:
+# In[19]:
 
 
 #código de # https://github.com/hyperopt/hyperopt/issues/267
@@ -540,7 +540,7 @@ def optimize_cnn(hype_space):
     print("\n\n")
 
 
-# In[43]:
+# In[20]:
 
 
 #código de # https://github.com/hyperopt/hyperopt/issues/267
@@ -572,7 +572,7 @@ def run_a_trial():
     print("\nOPTIMIZATION STEP COMPLETE.\n")
 
 
-# In[44]:
+# In[21]:
 
 
 space = {
@@ -594,7 +594,7 @@ space = {
 # }
 
 
-# In[45]:
+# In[22]:
 
 
 if __name__ == "__main__":
