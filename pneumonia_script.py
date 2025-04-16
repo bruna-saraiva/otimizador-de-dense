@@ -16,8 +16,8 @@ Objetivos:
 ## Pre-requisitos
 """
 
-!pip install hyperopt
-!pip install pymongo
+# !pip install hyperopt
+# !pip install pymongo
 
 import numpy as np
 import sklearn as sk
@@ -56,9 +56,9 @@ import traceback
 import pickle
 import uuid
 
-!mkdir results
+# !mkdir results
 
-!ls -l /
+# !ls -l /
 
 """## Globais"""
 

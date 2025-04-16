@@ -1,19 +1,19 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[23]:
+# In[6]:
 
 
 # !cp /content/drive/MyDrive/vandecia/denseGroupTPE/database.zip .
 
 
-# In[24]:
+# In[1]:
 
 
 # !unzip database.zip
 
 
-# In[25]:
+# In[2]:
 
 
 get_ipython().system('pip install hyperopt')
@@ -22,13 +22,13 @@ get_ipython().system('pip install nbconvert')
 get_ipython().system('pip install pydot graphviz')
 
 
-# In[26]:
+# In[3]:
 
 
 get_ipython().system('mkdir results')
 
 
-# In[27]:
+# In[4]:
 
 
 import numpy as np
@@ -71,13 +71,13 @@ import pickle
 import uuid
 
 
-# In[28]:
+# In[5]:
 
 
 get_ipython().system('python -m jupyter nbconvert --to script "*.ipynb"')
 
 
-# In[29]:
+# In[ ]:
 
 
 #define o tamanho padrão das imagens que serão passadas na rede, sendo que a mesma aceita imagens maiores que o padrão definido da VGG16 (255x255)
@@ -89,7 +89,7 @@ batch_size = 8 #batch_size para o treino
 batch_size_val = 1
 
 #define as épocas
-epochs = 5
+epochs = 10
 
 class_weight = {0: 1.48, 1: 4.14, 2:11.49}
 # class_weight = {0: 1, 1: 1, 2:1}
@@ -127,13 +127,20 @@ datagen = ImageDataGenerator(rescale=1.,
 validgen = ImageDataGenerator(rescale=1., featurewise_center=True) #generator de teste e validação, evita-se realizar alterações nas imagens
 
 #como as imagens apresentam um tamanho maior que o padrão, deve-se fazer uma normalização das mesmas para que sejam aceitas na rede
-datagen.mean=np.array([103.939, 116.779, 123.68],dtype=np.float32).reshape(1,1,3)
-validgen.mean=np.array([103.939, 116.779, 123.68],dtype=np.float32).reshape(1,1,3)
+# datagen.mean=np.array([103.939, 116.779, 123.68],dtype=np.float32).reshape(1,1,3)
+# validgen.mean=np.array([103.939, 116.779, 123.68],dtype=np.float32).reshape(1,1,3)
+
+# Média aproximada para imagens médicas em grayscale (ajuste conforme seu dataset)
+grayscale_mean = np.array([123.68], dtype=np.float32).reshape(1, 1, 1)  # 1 canal
+
+datagen.mean = grayscale_mean
+validgen.mean = grayscale_mean
 
 #definindo os geradores para cada pasta
 train_gen = datagen.flow_from_directory( #generator para treino
     train_data_dir,
     target_size=(img_height, img_width),
+    color_mode='grayscale',
     batch_size=batch_size,
     class_mode="categorical",
     shuffle=True)
@@ -159,7 +166,60 @@ validation_samples = len(val_gen.filenames)
 test_samples = len(test_gen.filenames)
 
 
-# In[30]:
+# In[1]:
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+def visualize_grayscale_images(generator, num_images=3):
+    """
+    Visualiza imagens em grayscale do gerador de treino
+    
+    Args:
+        generator: Seu ImageDataGenerator configurado para grayscale
+        num_images: Número de imagens a mostrar
+    """
+    # Obtém um batch de imagens do generator
+    images, labels = next(generator)
+    
+    # Nomes das classes
+    class_names = list(generator.class_indices.keys())
+    
+    # Configura o plot
+    plt.figure(figsize=(15, 5))
+    
+    for i in range(min(num_images, len(images))):
+        # Prepara a imagem (remove dimensão extra do canal se existir)
+        image = np.squeeze(images[i])
+        
+        # Desnormaliza se necessário (ajuste conforme sua normalização)
+        if image.min() < 0:  # Se tiver valores negativos da normalização
+            image = image - image.min()
+            image = image / image.max()
+        
+        # Converte para uint8 se necessário
+        if image.max() <= 1.0:
+            image = (image * 255).astype('uint8')
+        
+        # Obtém a label verdadeira
+        label_idx = np.argmax(labels[i])
+        label_name = class_names[label_idx]
+        
+        # Plota a imagem
+        plt.subplot(1, num_images, i+1)
+        plt.imshow(image, cmap='gray')
+        plt.title(f'Classe: {label_name}\nShape: {image.shape}')
+        plt.axis('off')
+    
+    plt.tight_layout()
+    plt.show()
+
+# Uso: visualiza 3 imagens do conjunto de treino em grayscale
+visualize_grayscale_images(train_gen, num_images=3)
+
+
+# In[ ]:
 
 
 tf.keras.backend.clear_session()
@@ -215,7 +275,7 @@ def keras_model_memory_usage_in_bytes(model, *, batch_size: int):
     return total_memory
 
 
-# In[31]:
+# In[ ]:
 
 
 def save_json_result(model_name, result):
@@ -233,7 +293,7 @@ def save_json_result(model_name, result):
 
 # 
 
-# In[32]:
+# In[ ]:
 
 
 import numpy as np
@@ -336,13 +396,13 @@ def get_model(input_shape,
     return model
 
 
-# In[33]:
+# In[ ]:
 
 
 def build_and_train(hype_space):
     print (hype_space)
 
-    model_final = get_model(input_shape=(img_width, img_height, 3),
+    model_final = get_model(input_shape=(img_width, img_height, 1),
             num_blocks = int(hype_space['num_blocks']),
             num_layers_per_block = int(hype_space['num_layers_per_block']),
             growth_rate = int(hype_space['growth_rate']),
@@ -363,8 +423,17 @@ def build_and_train(hype_space):
             'status': STATUS_FAIL
         }
         return model_final, model_name, result
+    
+    # nova alteracao aquiiiii 10/04
+    weights_file = 'weights_best_etapa1.keras'
+    if os.path.exists(weights_file):
+        print("Carregando pesos pré-existentes...")
+        model_final = load_model(weights_file)
+    else:
+        print("Nenhum peso encontrado. Treinando do zero...")
 
-    model_final = load_model('weights_best_etapa1.keras')
+
+    # model_final = load_model('weights_best_etapa1.keras')
 
 # ----------------------------------------------------------------------------
 
@@ -405,6 +474,9 @@ def build_and_train(hype_space):
     plot_model(model_final, to_file= RESULTS_DIR + model_name + '_plot.png', show_shapes=True, show_layer_names=True)
 
     result = {
+        'epoch': epochs,
+        'batch_treino' : batch_size,
+        'batch_teste' : batch_size_val,
         'loss': 1-acc,
         'acurracy': acc,
         'report': class_report,
@@ -478,7 +550,7 @@ def run_a_trial():
     print("\nOPTIMIZATION STEP COMPLETE.\n")
 
 
-# In[34]:
+# In[2]:
 
 
 # run_a_trial()
