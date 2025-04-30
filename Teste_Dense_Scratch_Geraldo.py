@@ -1,19 +1,19 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[6]:
+# In[22]:
 
 
 # !cp /content/drive/MyDrive/vandecia/denseGroupTPE/database.zip .
 
 
-# In[1]:
+# In[23]:
 
 
 # !unzip database.zip
 
 
-# In[2]:
+# In[24]:
 
 
 get_ipython().system('pip install hyperopt')
@@ -22,13 +22,13 @@ get_ipython().system('pip install nbconvert')
 get_ipython().system('pip install pydot graphviz')
 
 
-# In[3]:
+# In[25]:
 
 
 get_ipython().system('mkdir results')
 
 
-# In[4]:
+# In[26]:
 
 
 import numpy as np
@@ -70,14 +70,16 @@ import traceback
 import pickle
 import uuid
 
+from datetime import datetime
 
-# In[5]:
+
+# In[27]:
 
 
 get_ipython().system('python -m jupyter nbconvert --to script "*.ipynb"')
 
 
-# In[ ]:
+# In[29]:
 
 
 #define o tamanho padrão das imagens que serão passadas na rede, sendo que a mesma aceita imagens maiores que o padrão definido da VGG16 (255x255)
@@ -113,8 +115,10 @@ space = {
 }
 
 
+
+
 #DataGenerator utilizado para fazer o augmentation on the batch
-datagen = ImageDataGenerator(rescale=1.,
+datagen = ImageDataGenerator(rescale=1., # era assim antes de adicionar o clahe
     featurewise_center=True,
     rotation_range=10,
     width_shift_range=.1,
@@ -124,23 +128,18 @@ datagen = ImageDataGenerator(rescale=1.,
     vertical_flip=False,
     fill_mode="reflect") #generator de treino
 
-validgen = ImageDataGenerator(rescale=1., featurewise_center=True) #generator de teste e validação, evita-se realizar alterações nas imagens
+validgen = ImageDataGenerator(rescale=1., featurewise_center=True) #generator de teste e validação, evita-se realizar alterações nas imagens # era assim antes de adicionar o clahe
 
 #como as imagens apresentam um tamanho maior que o padrão, deve-se fazer uma normalização das mesmas para que sejam aceitas na rede
 # datagen.mean=np.array([103.939, 116.779, 123.68],dtype=np.float32).reshape(1,1,3)
 # validgen.mean=np.array([103.939, 116.779, 123.68],dtype=np.float32).reshape(1,1,3)
 
-# Média aproximada para imagens médicas em grayscale (ajuste conforme seu dataset)
-grayscale_mean = np.array([123.68], dtype=np.float32).reshape(1, 1, 1)  # 1 canal
-
-datagen.mean = grayscale_mean
-validgen.mean = grayscale_mean
 
 #definindo os geradores para cada pasta
 train_gen = datagen.flow_from_directory( #generator para treino
     train_data_dir,
     target_size=(img_height, img_width),
-    color_mode='grayscale',
+    # color_mode='grayscale',
     batch_size=batch_size,
     class_mode="categorical",
     shuffle=True)
@@ -148,6 +147,7 @@ train_gen = datagen.flow_from_directory( #generator para treino
 val_gen = validgen.flow_from_directory( #generator para validação
     validation_data_dir,
     target_size=(img_height, img_width),
+    # color_mode='grayscale',
     batch_size=batch_size_val,
     class_mode="categorical",
     shuffle=True)
@@ -155,6 +155,7 @@ val_gen = validgen.flow_from_directory( #generator para validação
 test_gen = validgen.flow_from_directory( #generator para teste
     test_data_dir,
     target_size=(img_height, img_width),
+    # color_mode='grayscale',
     batch_size=batch_size_val,
     class_mode="categorical",
     shuffle=False)
@@ -166,41 +167,134 @@ validation_samples = len(val_gen.filenames)
 test_samples = len(test_gen.filenames)
 
 
-# In[1]:
+# In[ ]:
+
+
+def apply_clahe(img):
+    """Versão mais robusta do CLAHE"""
+    try:
+        # Converte para uint8 se necessário
+        if img.dtype != np.uint8:
+            if img.max() <= 1.0:
+                img = (img * 255).astype(np.uint8)
+            else:
+                img = img.astype(np.uint8)
+        
+        # Converte para LAB
+        lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
+        l_channel = lab[:,:,0]
+        
+        # Aplica CLAHE
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        cl = clahe.apply(l_channel)
+        
+        # Junta os canais
+        lab[:,:,0] = cl
+        final = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
+        
+        # Normaliza
+        return final.astype(np.float32) / 255.0
+    
+    except Exception as e:
+        print(f"Error applying CLAHE: {e}")
+        return img  # Retorna a imagem original em caso de erro
+
+
+# In[ ]:
+
+
+import cv2
+import matplotlib.pyplot as plt
+
+def preprocess_with_clahe(image):
+    """Wrapper para aplicar CLAHE dentro do ImageDataGenerator"""
+    # Garante que a imagem está no formato correto (0-255)
+    if image.max() <= 1.0:
+        image = (image * 255).astype(np.uint8)
+    else:
+        image = image.astype(np.uint8)
+    
+    # Aplica CLAHE
+    image = apply_clahe(image)
+    
+    # Garante que retorna no formato esperado (0-1)
+    return image.astype(np.float32) / 255.0
+
+
+# In[31]:
+
+
+def visualize_preprocessing(generator, num_images=3):
+    """Visualiza imagens antes e depois do pré-processamento"""
+    images, labels = next(generator)
+    class_names = list(generator.class_indices.keys())
+    
+    plt.figure(figsize=(15, 10))
+    
+    for i in range(min(num_images, len(images))):
+        # Imagem original (após outras transformações mas antes do CLAHE)
+        orig_image = images[i].copy()
+        if orig_image.mean() < 1:
+            orig_image = orig_image * 255
+        orig_image = np.clip(orig_image, 0, 255).astype('uint8')
+        
+        # Imagem após CLAHE (já aplicado pelo generator)
+        clahe_image = images[i]
+        if clahe_image.mean() < 1:
+            clahe_image = clahe_image * 255
+        clahe_image = np.clip(clahe_image, 0, 255).astype('uint8')
+        
+        label_idx = np.argmax(labels[i])
+        label_name = class_names[label_idx]
+        
+        # Plota original
+        plt.subplot(2, num_images, i+1)
+        plt.imshow(orig_image)
+        plt.title(f'Original\nClasse: {label_name}')
+        plt.axis('off')
+        
+        # Plota CLAHE
+        plt.subplot(2, num_images, num_images+i+1)
+        plt.imshow(clahe_image)
+        plt.title('Após CLAHE')
+        plt.axis('off')
+    
+    plt.tight_layout()
+    plt.show()
+
+# Teste a visualização
+visualize_preprocessing(train_gen, num_images=3)
+
+
+# In[17]:
 
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-def visualize_grayscale_images(generator, num_images=3):
+def visualize_training_images(generator, num_images=3):
     """
-    Visualiza imagens em grayscale do gerador de treino
+    Visualiza imagens do gerador de treino
     
     Args:
-        generator: Seu ImageDataGenerator configurado para grayscale
+        generator: Seu ImageDataGenerator (train_gen no seu caso)
         num_images: Número de imagens a mostrar
     """
     # Obtém um batch de imagens do generator
     images, labels = next(generator)
     
-    # Nomes das classes
+    # Nomes das classes (pega o mapeamento do generator)
     class_names = list(generator.class_indices.keys())
     
     # Configura o plot
     plt.figure(figsize=(15, 5))
     
     for i in range(min(num_images, len(images))):
-        # Prepara a imagem (remove dimensão extra do canal se existir)
-        image = np.squeeze(images[i])
-        
-        # Desnormaliza se necessário (ajuste conforme sua normalização)
-        if image.min() < 0:  # Se tiver valores negativos da normalização
-            image = image - image.min()
-            image = image / image.max()
-        
-        # Converte para uint8 se necessário
-        if image.max() <= 1.0:
-            image = (image * 255).astype('uint8')
+        # Desnormaliza a imagem (se foi normalizada)
+        image = images[i]
+        if image.mean() < 1:  # Se os valores estiverem entre 0 e 1
+            image = image * 255
+        image = np.clip(image, 0, 255).astype('uint8')
         
         # Obtém a label verdadeira
         label_idx = np.argmax(labels[i])
@@ -208,18 +302,18 @@ def visualize_grayscale_images(generator, num_images=3):
         
         # Plota a imagem
         plt.subplot(1, num_images, i+1)
-        plt.imshow(image, cmap='gray')
+        plt.imshow(image)
         plt.title(f'Classe: {label_name}\nShape: {image.shape}')
         plt.axis('off')
     
     plt.tight_layout()
     plt.show()
 
-# Uso: visualiza 3 imagens do conjunto de treino em grayscale
-visualize_grayscale_images(train_gen, num_images=3)
+# Uso: visualize 3 imagens do conjunto de treino
+visualize_training_images(train_gen, num_images=3)
 
 
-# In[ ]:
+# In[15]:
 
 
 tf.keras.backend.clear_session()
@@ -275,7 +369,7 @@ def keras_model_memory_usage_in_bytes(model, *, batch_size: int):
     return total_memory
 
 
-# In[ ]:
+# In[150]:
 
 
 def save_json_result(model_name, result):
@@ -293,7 +387,7 @@ def save_json_result(model_name, result):
 
 # 
 
-# In[ ]:
+# In[151]:
 
 
 import numpy as np
@@ -402,7 +496,7 @@ def get_model(input_shape,
 def build_and_train(hype_space):
     print (hype_space)
 
-    model_final = get_model(input_shape=(img_width, img_height, 1),
+    model_final = get_model(input_shape=(img_width, img_height, 3),
             num_blocks = int(hype_space['num_blocks']),
             num_layers_per_block = int(hype_space['num_layers_per_block']),
             growth_rate = int(hype_space['growth_rate']),
@@ -484,7 +578,8 @@ def build_and_train(hype_space):
         # 'report_p_1': class_report_p_1,
         'model_name': model_name,
         'space': hype_space,
-        'status': STATUS_OK
+        'status': STATUS_OK,
+        'data_execucao': datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # Formato: Ano-Mês-Dia Hora:Minuto:Segundo
     }
 
     print(result)
@@ -550,7 +645,7 @@ def run_a_trial():
     print("\nOPTIMIZATION STEP COMPLETE.\n")
 
 
-# In[2]:
+# In[ ]:
 
 
 # run_a_trial()
