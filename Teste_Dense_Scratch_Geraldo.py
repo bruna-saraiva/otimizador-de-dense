@@ -1,19 +1,19 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[22]:
+# In[1]:
 
 
 # !cp /content/drive/MyDrive/vandecia/denseGroupTPE/database.zip .
 
 
-# In[23]:
+# In[2]:
 
 
 # !unzip database.zip
 
 
-# In[24]:
+# In[3]:
 
 
 get_ipython().system('pip install hyperopt')
@@ -22,13 +22,13 @@ get_ipython().system('pip install nbconvert')
 get_ipython().system('pip install pydot graphviz')
 
 
-# In[25]:
+# In[4]:
 
 
 get_ipython().system('mkdir results')
 
 
-# In[26]:
+# In[5]:
 
 
 import numpy as np
@@ -73,18 +73,47 @@ import uuid
 from datetime import datetime
 
 
-# In[27]:
+# In[6]:
 
 
 get_ipython().system('python -m jupyter nbconvert --to script "*.ipynb"')
 
 
-# In[29]:
+# In[7]:
+
+
+# import cv2
+
+# def pre_process(im):
+#     import cv2
+#     import numpy as np
+
+#     # Converte para uint8 se necessário
+#     if im.dtype != np.uint8:
+#         im = (im * 255).astype(np.uint8) if im.max() <= 1.0 else im.astype(np.uint8)
+
+#     # Garante que tem 3 canais para conversão
+#     if im.ndim == 3 and im.shape[2] == 3:
+#         im = cv2.cvtColor(im, cv2.COLOR_RGB2GRAY)  # RGB → GRAY
+
+#     # Aplica filtro gaussiano e CLAHE
+#     im = cv2.GaussianBlur(im, (5, 5), 0)
+#     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(7, 7))
+#     im = clahe.apply(im)
+
+#     # Adiciona canal extra para Keras aceitar como imagem grayscale
+#     im = np.expand_dims(im, axis=-1)
+
+#     return im.astype(np.float32)
+
+
+
+# In[ ]:
 
 
 #define o tamanho padrão das imagens que serão passadas na rede, sendo que a mesma aceita imagens maiores que o padrão definido da VGG16 (255x255)
-img_width = 128
-img_height =  128
+img_width = 180
+img_height =  180
 batch_size = 8 #batch_size para o treino
 
 #define o batch_size de validação, das imagens de acordo com a memória disponivél na máquina
@@ -115,20 +144,23 @@ space = {
 }
 
 
-
-
 #DataGenerator utilizado para fazer o augmentation on the batch
 datagen = ImageDataGenerator(rescale=1., # era assim antes de adicionar o clahe
-    featurewise_center=True,
+    # featurewise_center=True,
     rotation_range=10,
     width_shift_range=.1,
     height_shift_range=.1,
     shear_range=0.2,
     horizontal_flip=True,
     vertical_flip=False,
-    fill_mode="reflect") #generator de treino
+    fill_mode="reflect",
+    # preprocessing_function = pre_process,
+)
+    #  #generator de treino
 
-validgen = ImageDataGenerator(rescale=1., featurewise_center=True) #generator de teste e validação, evita-se realizar alterações nas imagens # era assim antes de adicionar o clahe
+validgen = ImageDataGenerator(rescale=1., featurewise_center=True,
+                                # preprocessing_function = pre_process,
+                               ) #generator de teste e validação, evita-se realizar alterações nas imagens # era assim antes de adicionar o clahe
 
 #como as imagens apresentam um tamanho maior que o padrão, deve-se fazer uma normalização das mesmas para que sejam aceitas na rede
 # datagen.mean=np.array([103.939, 116.779, 123.68],dtype=np.float32).reshape(1,1,3)
@@ -167,106 +199,7 @@ validation_samples = len(val_gen.filenames)
 test_samples = len(test_gen.filenames)
 
 
-# In[ ]:
-
-
-def apply_clahe(img):
-    """Versão mais robusta do CLAHE"""
-    try:
-        # Converte para uint8 se necessário
-        if img.dtype != np.uint8:
-            if img.max() <= 1.0:
-                img = (img * 255).astype(np.uint8)
-            else:
-                img = img.astype(np.uint8)
-        
-        # Converte para LAB
-        lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
-        l_channel = lab[:,:,0]
-        
-        # Aplica CLAHE
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        cl = clahe.apply(l_channel)
-        
-        # Junta os canais
-        lab[:,:,0] = cl
-        final = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
-        
-        # Normaliza
-        return final.astype(np.float32) / 255.0
-    
-    except Exception as e:
-        print(f"Error applying CLAHE: {e}")
-        return img  # Retorna a imagem original em caso de erro
-
-
-# In[ ]:
-
-
-import cv2
-import matplotlib.pyplot as plt
-
-def preprocess_with_clahe(image):
-    """Wrapper para aplicar CLAHE dentro do ImageDataGenerator"""
-    # Garante que a imagem está no formato correto (0-255)
-    if image.max() <= 1.0:
-        image = (image * 255).astype(np.uint8)
-    else:
-        image = image.astype(np.uint8)
-    
-    # Aplica CLAHE
-    image = apply_clahe(image)
-    
-    # Garante que retorna no formato esperado (0-1)
-    return image.astype(np.float32) / 255.0
-
-
-# In[31]:
-
-
-def visualize_preprocessing(generator, num_images=3):
-    """Visualiza imagens antes e depois do pré-processamento"""
-    images, labels = next(generator)
-    class_names = list(generator.class_indices.keys())
-    
-    plt.figure(figsize=(15, 10))
-    
-    for i in range(min(num_images, len(images))):
-        # Imagem original (após outras transformações mas antes do CLAHE)
-        orig_image = images[i].copy()
-        if orig_image.mean() < 1:
-            orig_image = orig_image * 255
-        orig_image = np.clip(orig_image, 0, 255).astype('uint8')
-        
-        # Imagem após CLAHE (já aplicado pelo generator)
-        clahe_image = images[i]
-        if clahe_image.mean() < 1:
-            clahe_image = clahe_image * 255
-        clahe_image = np.clip(clahe_image, 0, 255).astype('uint8')
-        
-        label_idx = np.argmax(labels[i])
-        label_name = class_names[label_idx]
-        
-        # Plota original
-        plt.subplot(2, num_images, i+1)
-        plt.imshow(orig_image)
-        plt.title(f'Original\nClasse: {label_name}')
-        plt.axis('off')
-        
-        # Plota CLAHE
-        plt.subplot(2, num_images, num_images+i+1)
-        plt.imshow(clahe_image)
-        plt.title('Após CLAHE')
-        plt.axis('off')
-    
-    plt.tight_layout()
-    plt.show()
-
-# Teste a visualização
-visualize_preprocessing(train_gen, num_images=3)
-
-
-# In[17]:
+# In[9]:
 
 
 import matplotlib.pyplot as plt
@@ -274,46 +207,52 @@ import numpy as np
 
 def visualize_training_images(generator, num_images=3):
     """
-    Visualiza imagens do gerador de treino
-    
+    Visualiza imagens do gerador de treino.
+
     Args:
-        generator: Seu ImageDataGenerator (train_gen no seu caso)
-        num_images: Número de imagens a mostrar
+        generator: Um ImageDataGenerator flow (ex: train_gen)
+        num_images: Número de imagens a exibir
     """
-    # Obtém um batch de imagens do generator
+    # Obtém um batch de imagens e labels
     images, labels = next(generator)
-    
-    # Nomes das classes (pega o mapeamento do generator)
+
+    # Pega os nomes das classes
     class_names = list(generator.class_indices.keys())
-    
-    # Configura o plot
-    plt.figure(figsize=(15, 5))
-    
+
+    # Prepara o plot
+    plt.figure(figsize=(5 * num_images, 5))
+
     for i in range(min(num_images, len(images))):
-        # Desnormaliza a imagem (se foi normalizada)
         image = images[i]
-        if image.mean() < 1:  # Se os valores estiverem entre 0 e 1
-            image = image * 255
-        image = np.clip(image, 0, 255).astype('uint8')
-        
-        # Obtém a label verdadeira
+
+        # Desfaz normalização se necessário
+        if image.max() <= 1.0:
+            image = image * 255.0
+        image = np.clip(image, 0, 255).astype(np.uint8)
+
+        # Remove canal extra se for grayscale com shape (H, W, 1)
+        if image.ndim == 3 and image.shape[2] == 1:
+            image = image.squeeze(-1)
+
+        # Obtém o nome da classe
         label_idx = np.argmax(labels[i])
         label_name = class_names[label_idx]
-        
-        # Plota a imagem
-        plt.subplot(1, num_images, i+1)
-        plt.imshow(image)
+
+        # Mostra a imagem
+        plt.subplot(1, num_images, i + 1)
+        plt.imshow(image, cmap='gray' if image.ndim == 2 else None)
         plt.title(f'Classe: {label_name}\nShape: {image.shape}')
         plt.axis('off')
-    
+
     plt.tight_layout()
     plt.show()
+
 
 # Uso: visualize 3 imagens do conjunto de treino
 visualize_training_images(train_gen, num_images=3)
 
 
-# In[15]:
+# In[10]:
 
 
 tf.keras.backend.clear_session()
@@ -369,7 +308,7 @@ def keras_model_memory_usage_in_bytes(model, *, batch_size: int):
     return total_memory
 
 
-# In[150]:
+# In[11]:
 
 
 def save_json_result(model_name, result):
@@ -387,7 +326,7 @@ def save_json_result(model_name, result):
 
 # 
 
-# In[151]:
+# In[12]:
 
 
 import numpy as np
@@ -490,13 +429,13 @@ def get_model(input_shape,
     return model
 
 
-# In[ ]:
+# In[13]:
 
 
 def build_and_train(hype_space):
     print (hype_space)
 
-    model_final = get_model(input_shape=(img_width, img_height, 3),
+    model_final = get_model(input_shape=(img_width, img_height, 3), # quando for 3 canais (RGB), inves de 1 deve ser 3
             num_blocks = int(hype_space['num_blocks']),
             num_layers_per_block = int(hype_space['num_layers_per_block']),
             growth_rate = int(hype_space['growth_rate']),
@@ -510,7 +449,7 @@ def build_and_train(hype_space):
     model_size = model_size/1000000000
 
     #print("Model size: " + str(model_size) )
-    if (model_size > 10.5):
+    if (model_size > 11):
         model_name = "model_" + str(uuid.uuid4())[:5]
         result = {
             'space': hype_space,
@@ -546,7 +485,7 @@ def build_and_train(hype_space):
                                 epochs=epochs,
                                 steps_per_epoch=int(train_samples/batch_size),
                                 validation_data=test_gen,
-                                validation_steps=batch_size_val,
+                                # validation_steps=batch_size_val,
                                 class_weight = class_weight,
                                 verbose=1, callbacks=[early_stopping,checkpoint,reduce_lr])
 
@@ -645,7 +584,7 @@ def run_a_trial():
     print("\nOPTIMIZATION STEP COMPLETE.\n")
 
 
-# In[ ]:
+# In[14]:
 
 
 # run_a_trial()
