@@ -20,6 +20,8 @@ get_ipython().system('pip install hyperopt')
 get_ipython().system('pip install pymongo')
 get_ipython().system('pip install nbconvert')
 get_ipython().system('pip install pydot graphviz')
+get_ipython().system('pip install visualkeras')
+get_ipython().system('pip install wandb')
 
 
 # In[4]:
@@ -28,7 +30,7 @@ get_ipython().system('pip install pydot graphviz')
 get_ipython().system('mkdir results')
 
 
-# In[5]:
+# In[ ]:
 
 
 import numpy as np
@@ -72,14 +74,23 @@ import uuid
 
 from datetime import datetime
 
+import visualkeras
+import wandb
 
-# In[6]:
+
+# In[ ]:
+
+
+os.environ["WANDB_API_KEY"] = "23d0c43f765a434b92508667ed58001b6e7c88d2"
+
+
+# In[ ]:
 
 
 get_ipython().system('python -m jupyter nbconvert --to script "*.ipynb"')
 
 
-# In[7]:
+# In[ ]:
 
 
 # import cv2
@@ -158,9 +169,10 @@ datagen = ImageDataGenerator(rescale=1., # era assim antes de adicionar o clahe
 )
     #  #generator de treino
 
-validgen = ImageDataGenerator(rescale=1., featurewise_center=True,
-                                # preprocessing_function = pre_process,
-                               ) #generator de teste e validação, evita-se realizar alterações nas imagens # era assim antes de adicionar o clahe
+validgen = ImageDataGenerator(rescale=1., 
+                            #   featurewise_center=True,
+                            # preprocessing_function = pre_process,
+                            ) #generator de teste e validação, evita-se realizar alterações nas imagens # era assim antes de adicionar o clahe
 
 #como as imagens apresentam um tamanho maior que o padrão, deve-se fazer uma normalização das mesmas para que sejam aceitas na rede
 # datagen.mean=np.array([103.939, 116.779, 123.68],dtype=np.float32).reshape(1,1,3)
@@ -199,7 +211,7 @@ validation_samples = len(val_gen.filenames)
 test_samples = len(test_gen.filenames)
 
 
-# In[9]:
+# In[ ]:
 
 
 import matplotlib.pyplot as plt
@@ -252,7 +264,7 @@ def visualize_training_images(generator, num_images=3):
 visualize_training_images(train_gen, num_images=3)
 
 
-# In[10]:
+# In[ ]:
 
 
 tf.keras.backend.clear_session()
@@ -308,7 +320,7 @@ def keras_model_memory_usage_in_bytes(model, *, batch_size: int):
     return total_memory
 
 
-# In[11]:
+# In[ ]:
 
 
 def save_json_result(model_name, result):
@@ -324,9 +336,7 @@ def save_json_result(model_name, result):
         )
 
 
-# 
-
-# In[12]:
+# In[ ]:
 
 
 import numpy as np
@@ -421,6 +431,9 @@ def get_model(input_shape,
     outputs = layers.Activation( 'softmax' )( x )
 
     model = Model( inputs , outputs )
+
+    visualkeras.layered_view(model, legend=True, to_file='model_architecture.png')  # Salva como imagem
+    
     model.compile( loss='categorical_crossentropy' ,optimizer=Adam(),
                     metrics=[ 'accuracy',
                               metrics.Recall(thresholds=0.5, class_id=0,name='r_normal'),
@@ -429,11 +442,18 @@ def get_model(input_shape,
     return model
 
 
-# In[13]:
+# In[ ]:
 
 
 def build_and_train(hype_space):
     print (hype_space)
+
+    #inicializar o wandb para cada experimento
+    wandb.init(
+        project = "otimizando-uma-dense-from-scratch",
+        config = hype_space,
+        reinit=True
+    )
 
     model_final = get_model(input_shape=(img_width, img_height, 3), # quando for 3 canais (RGB), inves de 1 deve ser 3
             num_blocks = int(hype_space['num_blocks']),
@@ -455,9 +475,9 @@ def build_and_train(hype_space):
             'space': hype_space,
             'status': STATUS_FAIL
         }
+        wandb.finish()
         return model_final, model_name, result
     
-    # nova alteracao aquiiiii 10/04
     weights_file = 'weights_best_etapa1.keras'
     if os.path.exists(weights_file):
         print("Carregando pesos pré-existentes...")
@@ -465,29 +485,24 @@ def build_and_train(hype_space):
     else:
         print("Nenhum peso encontrado. Treinando do zero...")
 
-
     # model_final = load_model('weights_best_etapa1.keras')
 
 # ----------------------------------------------------------------------------
-
-
     #inicio da fase de treino
     #as imagens são passadas na rede
-    early_stopping = EarlyStopping(monitor='loss', patience=4,
-                                    verbose=1, mode='auto')
-    checkpoint = ModelCheckpoint('weights_best_etapa1.keras', monitor='loss',
-                                verbose=1,
-                                save_best_only=True, mode='auto')
-
+    early_stopping = EarlyStopping(monitor='loss', patience=4,verbose=1, mode='auto')
+    checkpoint = ModelCheckpoint('weights_best_etapa1.keras', monitor='loss',verbose=1,
+                                 save_best_only=True, mode='auto')
     reduce_lr = ReduceLROnPlateau(monitor='loss', factor=0.1, patience=3, verbose=1)
 
     model_final.fit(train_gen,
-                                epochs=epochs,
-                                steps_per_epoch=int(train_samples/batch_size),
-                                validation_data=test_gen,
-                                # validation_steps=batch_size_val,
-                                class_weight = class_weight,
-                                verbose=1, callbacks=[early_stopping,checkpoint,reduce_lr])
+                    epochs=epochs,
+                    steps_per_epoch=int(train_samples/batch_size),
+                    validation_data=test_gen,
+                    # validation_steps=batch_size_val,
+                    class_weight = class_weight,
+                    # adicionando wandb aos callbacks
+                    verbose=1, callbacks=[early_stopping,checkpoint,reduce_lr,wandb.keras.WandbCallback()])
 
     preds = model_final.predict(test_gen, test_samples) #realiza o teste de classificação das imagens na rede
     y_pred = np.argmax(preds, axis=1)
@@ -521,7 +536,14 @@ def build_and_train(hype_space):
         'data_execucao': datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # Formato: Ano-Mês-Dia Hora:Minuto:Segundo
     }
 
+    # logando as metricas do wandb
+    wandb.log({'final_accuracy': acc,
+                'final_loss': 1 -acc,
+                'classification_report':class_report
+                })
+
     print(result)
+    wandb.finish()
 
     return model_final, model_name, result
 
@@ -584,7 +606,7 @@ def run_a_trial():
     print("\nOPTIMIZATION STEP COMPLETE.\n")
 
 
-# In[14]:
+# In[ ]:
 
 
 # run_a_trial()
