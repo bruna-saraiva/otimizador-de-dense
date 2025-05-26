@@ -1,0 +1,14 @@
+21/05/2025: iniciando implementação de mecanismo de atenção 
+- procurar cbam e SE no github
+- tentar entender em que momento esta extraindo bem as caracteristicas
+- aplicar o mecanismo no local correto
+- testar com uma epoca para ver se deu problema
+Sugerir o seguinte dataset
+https://vindr.ai/datasets/cxr
+
+22/05/2025: iniciando experimentos com se_block
+- experimentar com 10 épocas e verificar se nao vai dar nenhum erro
+- esquecer wandb por enquanto, quando os experimentos iniciais com se e cbam terminarem e qnd eu consertar o negocio das imagens(grayscale) ai sim
+uso o wandb(me baseando no codigo anterior inclusive)
+- tirar outro codigo "otimizando . . . " desta pasta 
+- toda vez que for treinar do zero, apagar o modelo e verificar a quantidade de epocas  
