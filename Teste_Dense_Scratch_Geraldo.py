@@ -33,10 +33,10 @@
 # In[5]:
 
 
-# get_ipython().system('mkdir results')
+get_ipython().system('mkdir results')
 
 
-# In[ ]:
+# In[6]:
 
 
 import numpy as np
@@ -90,19 +90,19 @@ import seaborn as sns
 
 
 
-# In[ ]:
+# In[7]:
 
 
 # os.environ["WANDB_API_KEY"] = "23d0c43f765a434b92508667ed58001b6e7c88d2"
 
 
-# In[ ]:
+# In[8]:
 
 
-# get_ipython().system('python -m jupyter nbconvert --to script "*.ipynb"')
+get_ipython().system('python -m jupyter nbconvert --to script "*.ipynb"')
 
 
-# In[ ]:
+# In[9]:
 
 
 # import cv2
@@ -135,18 +135,17 @@ import seaborn as sns
 
 
 #define o tamanho padrão das imagens que serão passadas na rede, sendo que a mesma aceita imagens maiores que o padrão definido da VGG16 (255x255)
-img_width = 180
-img_height =  180
+img_width = 200
+img_height =  200
 batch_size = 8 #batch_size para o treino
 
 #define o batch_size de validação, das imagens de acordo com a memória disponivél na máquina
 batch_size_val = 1
 
 #define as épocas
-epochs = 10
-
-class_weight = {0: 1.48, 1: 4.14, 2:11.49}
-# class_weight = {0: 1, 1: 1, 2:1}
+epochs = 1
+attention_module = 'Squeeze and Excitation'
+# class_weight = {0: 1.48, 1: 4.14, 2:11.49}
 
 RESULTS_DIR = "results/" #pasta para salvar os resultados dos treinamentos
 
@@ -168,23 +167,23 @@ space = {
 
 
 #DataGenerator utilizado para fazer o augmentation on the batch
-datagen = ImageDataGenerator(rescale=1., # era assim antes de adicionar o clahe
+datagen = ImageDataGenerator(rescale=1./255, # era assim antes de adicionar o clahe
     # featurewise_center=True,
-    rotation_range=10,
-    width_shift_range=.1,
-    height_shift_range=.1,
-    shear_range=0.2,
-    horizontal_flip=True,
+    rotation_range=5,
+    width_shift_range=.05,
+    height_shift_range=.05,
+    # shear_range=0.2,
+    horizontal_flip=False,
     vertical_flip=False,
-    fill_mode="reflect",
+    fill_mode="constant"
     # preprocessing_function = pre_process,
 )
     #  #generator de treino
 
-validgen = ImageDataGenerator(rescale=1., 
+validgen = ImageDataGenerator(rescale=1./255, 
                             #   featurewise_center=True,
                             # preprocessing_function = pre_process,
-                            ) #generator de teste e validação, evita-se realizar alterações nas imagens # era assim antes de adicionar o clahe
+                            ) #generator de teste e validação, evita-se realizar alterações nas imagens
 
 #como as imagens apresentam um tamanho maior que o padrão, deve-se fazer uma normalização das mesmas para que sejam aceitas na rede
 # datagen.mean=np.array([103.939, 116.779, 123.68],dtype=np.float32).reshape(1,1,3)
@@ -195,7 +194,7 @@ validgen = ImageDataGenerator(rescale=1.,
 train_gen = datagen.flow_from_directory( #generator para treino
     train_data_dir,
     target_size=(img_height, img_width),
-    # color_mode='grayscale',
+    color_mode='grayscale',
     batch_size=batch_size,
     class_mode="categorical",
     shuffle=True)
@@ -203,7 +202,7 @@ train_gen = datagen.flow_from_directory( #generator para treino
 val_gen = validgen.flow_from_directory( #generator para validação
     validation_data_dir,
     target_size=(img_height, img_width),
-    # color_mode='grayscale',
+    color_mode='grayscale',
     batch_size=batch_size_val,
     class_mode="categorical",
     shuffle=True)
@@ -211,11 +210,15 @@ val_gen = validgen.flow_from_directory( #generator para validação
 test_gen = validgen.flow_from_directory( #generator para teste
     test_data_dir,
     target_size=(img_height, img_width),
-    # color_mode='grayscale',
+    color_mode='grayscale',
     batch_size=batch_size_val,
     class_mode="categorical",
     shuffle=False)
 
+# Calcule os pesos automaticamente a partir dos dados
+from sklearn.utils.class_weight import compute_class_weight
+class_weights = compute_class_weight('balanced', classes=np.unique(train_gen.classes), y=train_gen.classes)
+class_weight = dict(enumerate(class_weights))
 
 #pega a quantidade de amostras de cada generator
 train_samples = len(train_gen.filenames)
@@ -223,7 +226,7 @@ validation_samples = len(val_gen.filenames)
 test_samples = len(test_gen.filenames)
 
 
-# In[ ]:
+# In[11]:
 
 
 import matplotlib.pyplot as plt
@@ -273,10 +276,10 @@ def visualize_training_images(generator, num_images=3):
 
 
 # Uso: visualize 3 imagens do conjunto de treino
-# visualize_training_images(train_gen, num_images=3)
+visualize_training_images(train_gen, num_images=3)
 
 
-# In[ ]:
+# In[12]:
 
 
 tf.keras.backend.clear_session()
@@ -332,7 +335,7 @@ def keras_model_memory_usage_in_bytes(model, *, batch_size: int):
     return total_memory
 
 
-# In[ ]:
+# In[13]:
 
 
 def save_json_result(model_name, result):
@@ -348,7 +351,83 @@ def save_json_result(model_name, result):
         )
 
 
-# In[ ]:
+# In[14]:
+
+
+from keras import layers
+from keras import backend as K
+import tensorflow as tf # Importante para tf.reduce_mean e tf.reduce_max
+
+def channel_attention_module(inputs, ratio=8, name=""):
+    """
+    Módulo de Atenção de Canal (CAM)
+    Foca em 'o que' é importante.
+    """
+    channel_axis = -1 # Geralmente -1 para 'channels_last'
+    filters = inputs.shape[channel_axis]
+
+    # Camadas MLP compartilhadas
+    shared_mlp_one = layers.Dense(filters // ratio, activation='relu', kernel_initializer='he_normal', use_bias=True, bias_initializer='zeros')
+    shared_mlp_two = layers.Dense(filters, kernel_initializer='he_normal', use_bias=True, bias_initializer='zeros')
+
+    # Global Average Pooling
+    avg_pool = layers.GlobalAveragePooling2D()(inputs)
+    avg_pool = layers.Reshape((1, 1, filters))(avg_pool)
+    avg_pool = shared_mlp_one(avg_pool)
+    avg_pool = shared_mlp_two(avg_pool)
+
+    # Global Max Pooling
+    max_pool = layers.GlobalMaxPooling2D()(inputs)
+    max_pool = layers.Reshape((1, 1, filters))(max_pool)
+    max_pool = shared_mlp_one(max_pool)
+    max_pool = shared_mlp_two(max_pool)
+
+    # Soma e ativação Sigmoid
+    cbam_feature = layers.Add()([avg_pool, max_pool])
+    cbam_feature = layers.Activation('sigmoid')(cbam_feature)
+
+    # Multiplicação (broadcast) com a entrada
+    return layers.Multiply(name=f"{name}_channel_attention")([inputs, cbam_feature])
+
+def spatial_attention_module(inputs, kernel_size=7, name=""):
+    """
+    Módulo de Atenção Espacial (SAM)
+    Foca em 'onde' é importante.
+    """
+    channel_axis = -1
+
+    # Average Pooling através dos canais
+    avg_pool = layers.Lambda(lambda x: K.mean(x, axis=channel_axis, keepdims=True))(inputs)
+
+    # Max Pooling através dos canais
+    max_pool = layers.Lambda(lambda x: K.max(x, axis=channel_axis, keepdims=True))(inputs)
+
+    # Concatenação
+    concat = layers.Concatenate(axis=channel_axis)([avg_pool, max_pool])
+
+    # Convolução 7x7 e ativação Sigmoid
+    cbam_feature = layers.Conv2D(filters=1,
+                                 kernel_size=kernel_size,
+                                 strides=1,
+                                 padding='same',
+                                 activation='sigmoid',
+                                 kernel_initializer='he_normal',
+                                 use_bias=False)(concat)
+
+    # Multiplicação (broadcast) com a entrada
+    return layers.Multiply(name=f"{name}_spatial_attention")([inputs, cbam_feature])
+
+def cbam_block(inputs, ratio=8, name=""):
+    """
+    Módulo de Atenção CBAM Completo.
+    Aplica CAM e depois SAM.
+    """
+    x = channel_attention_module(inputs, ratio=ratio, name=f"{name}_cam")
+    x = spatial_attention_module(x, name=f"{name}_sam")
+    return x
+
+
+# In[15]:
 
 
 def se_block(input_tensor, ratio=8, name=None):
@@ -389,14 +468,14 @@ def se_block(input_tensor, ratio=8, name=None):
     return x
 
 
-# In[ ]:
+# In[16]:
 
 
 # model = tf.keras.applications.DenseNet121()
 # plot_model(model, to_file= "teste_121" + '_plot.png', show_shapes=True, show_layer_names=True)
 
 
-# In[ ]:
+# In[17]:
 
 
 import numpy as np
@@ -487,6 +566,7 @@ def get_model(input_shape,
         x, num_filters = dense_block(x, num_layers_per_block , num_filters, growth_rate , dropout_rate,block_idx=i)
         x = transition(x, num_filters , compress_factor , dropout_rate )
         
+    # x = cbam_block(x, ratio=8, name="cbam_final")    
     x = se_block(x,ratio=8, name="se_final")
     x = layers.GlobalAveragePooling2D()( x )
     x = layers.Dense(256, activation='relu')(x)
@@ -506,7 +586,7 @@ def get_model(input_shape,
     return model
 
 
-# In[ ]:
+# In[18]:
 
 
 def build_and_train(hype_space):
@@ -519,7 +599,7 @@ def build_and_train(hype_space):
     #     reinit=True
     # )
 
-    model_final = get_model(input_shape=(img_width, img_height, 3), # quando for 3 canais (RGB), inves de 1 deve ser 3
+    model_final = get_model(input_shape=(img_width, img_height, 1), # para RGB: 3, para grayscale: 1
             num_blocks = int(hype_space['num_blocks']),
             num_layers_per_block = int(hype_space['num_layers_per_block']),
             growth_rate = int(hype_space['growth_rate']),
@@ -532,7 +612,7 @@ def build_and_train(hype_space):
                        batch_size = batch_size)
     model_size = model_size/1000000000
 
-    #print("Model size: " + str(model_size) )
+    print("Model size: " + str(model_size) )
     if (model_size > 11):
         model_name = "model_" + str(uuid.uuid4())[:5]
         result = {
@@ -543,28 +623,28 @@ def build_and_train(hype_space):
         return model_final, model_name, result
     
     weights_file = 'weights_best_etapa1.keras'
-    if os.path.exists(weights_file):
-        print("Carregando pesos pré-existentes...")
-        model_final = load_model(weights_file)
-    else:
-        print("Nenhum peso encontrado. Treinando do zero...")
+    # if os.path.exists(weights_file):
+    #     print("Carregando pesos pré-existentes...")
+    #     model_final = load_model(weights_file)
+    # else:
+    #     print("Nenhum peso encontrado. Treinando do zero...")
 
     # model_final = load_model('weights_best_etapa1.keras')
 
 # ----------------------------------------------------------------------------
     #inicio da fase de treino
     #as imagens são passadas na rede
-    early_stopping = EarlyStopping(monitor='loss', patience=4,verbose=1, mode='auto')
-    checkpoint = ModelCheckpoint('weights_best_etapa1.keras', monitor='loss',verbose=1,
+    early_stopping = EarlyStopping(monitor='val_loss', patience=7,verbose=1, mode='auto')
+    checkpoint = ModelCheckpoint('weights_best_etapa1.keras', monitor='val_loss',verbose=1,
                                  save_best_only=True, mode='auto')
-    reduce_lr = ReduceLROnPlateau(monitor='loss', factor=0.1, patience=3, verbose=1)
+    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=3, verbose=1)
     
     # Troquei wandbcallback() pelo metricsLogger e modelcheckpoint
 
     model_final.fit(train_gen,
                     epochs=epochs,
-                    steps_per_epoch=int(train_samples/batch_size),
-                    validation_data=test_gen,
+                    # steps_per_epoch=int(train_samples/batch_size),
+                    validation_data=val_gen,
                     # validation_steps=batch_size_val,
                     class_weight = class_weight,
                     # adicionando wandb aos callbacks
@@ -611,6 +691,7 @@ def build_and_train(hype_space):
         'epoch': epochs,
         'batch_treino' : batch_size,
         'batch_teste' : batch_size_val,
+        'attention_module': attention_module,
         'loss': 1-acc,
         'acurracy': acc,
         'report': class_report,
@@ -693,7 +774,7 @@ def run_a_trial():
     print("\nOPTIMIZATION STEP COMPLETE.\n")
 
 
-# In[ ]:
+# In[19]:
 
 
 # run_a_trial()
