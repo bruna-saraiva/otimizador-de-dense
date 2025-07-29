@@ -217,7 +217,7 @@ class DenseNet(nn.Module):
         
     def forward(self, x):
         # Adicione verificações de dimensão para depuração
-        print(f"Input shape: {x.shape}")
+        # print(f"Input shape: {x.shape}")
         
         x = self.conv1(x)
         # print(f"After conv1: {x.shape}")
@@ -241,6 +241,6 @@ class DenseNet(nn.Module):
         x = F.relu(self.fc1(x))
         # print(f"After fc1: {x.shape}")
         x = self.fc2(x)
-        print(f"After fc2: {x.shape}")
+        # print(f"After fc2: {x.shape}")
         
         return F.softmax(x, dim=1)

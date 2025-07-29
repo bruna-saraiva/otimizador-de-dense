@@ -28,7 +28,7 @@ results = []
 for split_num in range(1, 6):
     print(f"\n=== Processing split {split_num} ===")
     
-    # Data loaders
+    # data loaders
     train_dir = os.path.join(BASE_DIR, f"split{split_num}", "train")
     val_dir = os.path.join(BASE_DIR, f"split{split_num}", "val")
     test_dir = os.path.join(BASE_DIR, f"split{split_num}", "test")
@@ -36,15 +36,15 @@ for split_num in range(1, 6):
     train_loader, val_loader, test_loader = create_loaders(train_dir, val_dir, test_dir)
     class_weight = get_class_weights(train_loader)
     
-    # Training
+    # treino
     result = build_and_train(hype_space, train_loader, val_loader, test_loader, class_weight)
     results.append(result)
     
-    # Save model
+    # salva o modelo
     model_path = os.path.join(RESULTS_DIR, f"model_split_{split_num}.pth")
     torch.save(result['model'].state_dict(), model_path)
 
-    # Plot confusion matrix
+    # plota a matriz de confusão
     plt.figure(figsize=(6,5))
     sns.heatmap(result['confusion_matrix'], annot=True, fmt='d', cmap='Blues')
     plt.xlabel('Predicted')
@@ -61,14 +61,12 @@ avg_metrics = {
     'std_accuracy': np.std([r['accuracy'] for r in results])
 }
 
-# Save results
-# Por este novo código:
-# 1. Primeiro salve os modelos separadamente
+# Salva os results
 for split_num, result in enumerate(results, 1):
     model_path = os.path.join(RESULTS_DIR, f"model_split_{split_num}.pth")
     torch.save(result['model'].state_dict(), model_path)
 
-# 2. Prepare dados serializáveis para o JSON
+
 serializable_results = []
 for split_num, result in enumerate(results, 1):
     serializable_results.append({
@@ -81,7 +79,7 @@ for split_num, result in enumerate(results, 1):
         'model_path': f"model_split_{split_num}.pth"
     })
 
-# 3. Salve o JSON com os dados serializáveis
+
 with open(os.path.join(RESULTS_DIR, 'holdout_results.json'), 'w') as f:
     json.dump({
         'hyperparameters': hype_space,

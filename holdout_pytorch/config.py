@@ -1,7 +1,6 @@
-# Training config
 import torch
-img_height = 180
-img_width = 180
+img_height = 224
+img_width = 224
 batch_size = 8
 batch_size_val = 1
 epochs = 20

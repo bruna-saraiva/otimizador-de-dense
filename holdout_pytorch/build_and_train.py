@@ -36,7 +36,7 @@ def build_and_train(hype_space, train_loader, val_loader, test_loader, class_wei
     
     start_time = time.time()
     for epoch in range(epochs):
-        # Training
+        # treino
         model.train()
         train_loss, train_correct = 0, 0
         for inputs, targets in train_loader:
@@ -51,7 +51,7 @@ def build_and_train(hype_space, train_loader, val_loader, test_loader, class_wei
             train_loss += loss.item()
             train_correct += (outputs.argmax(1) == targets).sum().item()
         
-        # Validation
+        #val
         model.eval()
         val_loss, val_correct = 0, 0
         with torch.no_grad():
@@ -61,7 +61,7 @@ def build_and_train(hype_space, train_loader, val_loader, test_loader, class_wei
                 val_loss += criterion(outputs, targets).item()
                 val_correct += (outputs.argmax(1) == targets).sum().item()
         
-        # Metrics
+        # metrics
         train_loss /= len(train_loader)
         train_acc = train_correct / len(train_loader.dataset)
         val_loss /= len(val_loader)
@@ -78,12 +78,12 @@ def build_and_train(hype_space, train_loader, val_loader, test_loader, class_wei
               f'Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, '
               f'Train Acc: {train_acc:.4f}, Val Acc: {val_acc:.4f}')
         
-        # Save best model
+        # salva o melhor modelo
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(model.state_dict(), best_model_path)
             print(f"\nNew best model saved to {best_model_path}")
-    # Evaluation
+    # avaliacao 
 
     if os.path.exists(best_model_path):
         print("\nLoading best model for evaluation...")
